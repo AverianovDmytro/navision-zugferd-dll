@@ -1,330 +1,388 @@
-# Implementation Plan: ZUGFeRD DLL for Microsoft Navision
+# Improvement Plan: ZugferdNavision.Converter DLL
 
-## Gaps identified in the requirements
-
-Before planning the work, here are the issues found in the current requirements that the implementation must resolve:
-
-| # | Gap | Impact |
-|---|-----|--------|
-| 1 | `profile` is hardcoded to `"BASIC"` | Navision cannot request `COMFORT` or `EXTENDED` |
-| 2 | Output path uses a fixed `_zugferd` suffix | Concurrent calls for the same invoice will overwrite each other |
-| 3 | `FileNotFoundException` is never explicitly thrown | `ReadAllBytes` will throw with a cryptic message instead of a clear one |
-| 4 | `IEnumerable<string>` is used without `using System.Collections.Generic` | Will not compile |
-| 5 | `ZugferdConverter` method is `static` | COM clients cannot call static methods; the class needs an instance method |
-| 6 | Platform target not specified | Classic Navision is 32-bit; building `Any CPU` may cause a load failure |
-| 7 | No assembly-level `[ComVisible(true)]`, GUID, or strong name | COM registration will be incomplete or unreliable |
-| 8 | No authentication/API key support | Will fail against any protected API endpoint |
-| 9 | No test project | No way to verify behaviour without a live Navision instance |
-| 10 | No Navision C/AL code sample | Integration step is described but not demonstrated |
+> Analysis based on `prompts/requirements-draft-dll.md` vs. current implementation.
+> Phases are ordered by priority. Each item names the exact file and change needed.
 
 ---
 
-## Phase 1 — Project Scaffold
+## Phase 1 — Critical COM Compliance (Must-Fix)
 
-**Goal**: Create a compilable, correctly structured Visual Studio solution.
+These gaps will prevent the DLL from working in NAV 2017 at all.
 
-### Tasks
+### 1.1 Add `[ProgId]` to `ZugferdConverter`
 
-1. **Create the solution**
-   - Solution name: `ZugferdNavision`
-   - Project name: `ZugferdNavision.Converter` (Class Library, .NET Framework 4.6)
-   - Second project: `ZugferdNavision.Tests` (Unit Test Project, .NET Framework 4.6, MSTest or NUnit)
+**File:** `src/ZugferdNavision.Converter/ZugferdConverter.cs:10`
 
-2. **Configure the main project**
-   - Target framework: `.NET Framework 4.6`
-   - Platform target: **x86** (matches 32-bit Navision process)
-   - Output type: Class Library
-   - Assembly name: `ZugferdNavision.Converter`
-   - Root namespace: `ZugferdNavision`
-
-3. **Set assembly metadata** (`Properties/AssemblyInfo.cs`)
-   ```csharp
-   [assembly: ComVisible(true)]
-   [assembly: Guid("/* generate a new GUID */")]
-   [assembly: AssemblyVersion("1.0.0.0")]
-   ```
-
-4. **Add NuGet references**
-   - `System.Net.Http` (if not already in the GAC for .NET 4.6)
-   - No other third-party dependencies — keep the DLL self-contained
-
-5. **File layout**
-   ```
-   ZugferdNavision/
-   ├── ZugferdNavision.sln
-   ├── src/
-   │   └── ZugferdNavision.Converter/
-   │       ├── ZugferdNavision.Converter.csproj
-   │       ├── Properties/AssemblyInfo.cs
-   │       ├── ConversionResult.cs
-   │       └── ZugferdConverter.cs
-   └── tests/
-       └── ZugferdNavision.Tests/
-           ├── ZugferdNavision.Tests.csproj
-           └── ZugferdConverterTests.cs
-   ```
-
----
-
-## Phase 2 — Core Implementation
-
-**Goal**: Implement the two public classes exactly as specified, with all gaps fixed.
-
-### Task 2.1 — `ConversionResult.cs`
+The class currently has `[ComVisible(true)]` and `[Guid]` but is missing the `[ProgId]` attribute. Without it, NAV's Automation picker cannot locate the type by its well-known name.
 
 ```csharp
-using System.Runtime.InteropServices;
+// Add after [Guid(...)]
+[ProgId("ZugferdNavision.ZugferdConverter")]
+```
 
-namespace ZugferdNavision
+NAV users reference this as `ZugferdNavision.ZugferdConverter` in Automation variables — the ProgId must match exactly.
+
+---
+
+### 1.2 Add `[ClassInterface(ClassInterfaceType.AutoDual)]` to `ZugferdConverter`
+
+**File:** `src/ZugferdNavision.Converter/ZugferdConverter.cs:10`
+
+Without `AutoDual`, COM clients (NAV C/AL) cannot see the public methods via IDispatch. This is the most common reason a method "doesn't show up" in NAV Automation.
+
+```csharp
+[ClassInterface(ClassInterfaceType.AutoDual)]
+public class ZugferdConverter
+```
+
+---
+
+### 1.3 Add `[ClassInterface(ClassInterfaceType.AutoDual)]` to `ConversionResult`
+
+**File:** `src/ZugferdNavision.Converter/ConversionResult.cs:5`
+
+Same issue as 1.2 — without `AutoDual`, NAV cannot access `OutputPath`, `HasXmlErrors`, etc. on the returned result object.
+
+```csharp
+[ClassInterface(ClassInterfaceType.AutoDual)]
+public class ConversionResult
+```
+
+---
+
+### 1.4 Upgrade Target Framework from `net46` to `net472`
+
+**File:** `src/ZugferdNavision.Converter/ZugferdNavision.Converter.csproj:4`
+
+Requirements specify .NET Framework **4.6.2 minimum**. `net46` is below that threshold and may be absent on target machines. `net472` is the recommended target: it includes all 4.6.2 APIs, ships with Windows 10 RS4+, and is the last version that installs as a standalone package on Server 2012 R2.
+
+```xml
+<TargetFramework>net472</TargetFramework>
+```
+
+Also update `tests/ZugferdNavision.Tests/ZugferdNavision.Tests.csproj` to match.
+
+---
+
+### 1.5 Add `RegisterForComInterop` to the project file
+
+**File:** `src/ZugferdNavision.Converter/ZugferdNavision.Converter.csproj`
+
+Allows Visual Studio to auto-register the DLL after each Release build, avoiding the manual `regasm` step during development.
+
+```xml
+<RegisterForComInterop>true</RegisterForComInterop>
+```
+
+> Note: This only runs when building as Administrator. Production deployments still use the manual `regasm` script (Phase 4).
+
+---
+
+## Phase 2 — Input Validation (Medium Priority)
+
+### 2.1 Validate `apiUrl` parameter
+
+**File:** `src/ZugferdNavision.Converter/ZugferdConverter.cs:32`
+
+`apiUrl` is currently passed unchecked into `HttpClient.PostAsync`. A null or empty value throws an unhelpful `UriFormatException` deep in the stack. Add a guard:
+
+```csharp
+if (string.IsNullOrWhiteSpace(apiUrl))
+    throw new ArgumentNullException("apiUrl", "API URL must not be empty.");
+```
+
+---
+
+### 2.2 Validate `profile` parameter
+
+**File:** `src/ZugferdNavision.Converter/ZugferdConverter.cs:30`
+
+The `profile` parameter defaults to `"BASIC"` but is never validated. An incorrect value (e.g., a typo) is silently forwarded and the API returns an opaque 400. Add a whitelist check:
+
+```csharp
+private static readonly string[] ValidProfiles =
+    { "MINIMUM", "BASIC WL", "BASIC", "EN16931", "EXTENDED", "XRECHNUNG" };
+
+// In ConvertToZugferd, after null-check on apiUrl:
+if (string.IsNullOrWhiteSpace(profile))
+    profile = "BASIC";
+else if (Array.IndexOf(ValidProfiles, profile.ToUpperInvariant()) < 0)
+    throw new ArgumentException(
+        string.Format("Unknown profile '{0}'. Valid values: {1}",
+            profile, string.Join(", ", ValidProfiles)), "profile");
+```
+
+---
+
+### 2.3 Auto-create output directory if missing
+
+**File:** `src/ZugferdNavision.Converter/ZugferdConverter.cs:62`
+
+If `outputDirectory` is provided but does not exist, `File.WriteAllBytes` throws a `DirectoryNotFoundException`. NAV passes paths that may not pre-exist. Auto-create instead:
+
+```csharp
+string outDir = !string.IsNullOrEmpty(outputDirectory)
+    ? outputDirectory
+    : Path.GetTempPath();
+
+if (!Directory.Exists(outDir))
+    Directory.CreateDirectory(outDir);
+```
+
+---
+
+## Phase 3 — Configurability & Error Handling (Medium Priority)
+
+### 3.1 Make HTTP timeout configurable via a COM-visible property
+
+**File:** `src/ZugferdNavision.Converter/ZugferdConverter.cs`
+
+Timeout is currently hardcoded to 60 seconds. Large PDF files can exceed this. A COM-visible property lets NAV callers adjust it without recompiling the DLL:
+
+```csharp
+[ComVisible(true)]
+// ...
+public class ZugferdConverter
 {
-    [ComVisible(true)]
-    [Guid("/* generate a new GUID */")]
-    public class ConversionResult
+    public int TimeoutSeconds { get; set; } = 60;
+    // ...
+    private HttpClient CreateClient(string apiKey)
     {
-        public string OutputPath { get; set; }
-        public string XmlValidationErrors { get; set; }
-        public string PdfValidationErrors { get; set; }
-        public string PdfA3ValidationErrors { get; set; }
-        public bool HasXmlErrors   => !string.IsNullOrEmpty(XmlValidationErrors);
-        public bool HasPdfErrors   => !string.IsNullOrEmpty(PdfValidationErrors);
-        public bool HasPdfA3Errors => !string.IsNullOrEmpty(PdfA3ValidationErrors);
+        // ...
+        client.Timeout = TimeSpan.FromSeconds(TimeoutSeconds);
     }
 }
 ```
 
-### Task 2.2 — `ZugferdConverter.cs`
+NAV usage: `Converter.TimeoutSeconds := 120;` before calling `ConvertToZugferd`.
 
-Fix all gaps from Phase 0 and implement the full method:
+---
+
+### 3.2 Improve HTTP error exception message
+
+**File:** `src/ZugferdNavision.Converter/ZugferdConverter.cs:55`
+
+The current message is `API error 400: <body>`. Include the URL so operators can diagnose misconfiguration from NAV's error dialog:
 
 ```csharp
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Net.Http;
-using System.Runtime.InteropServices;
+throw new Exception(
+    string.Format("API error {0} calling {1}: {2}",
+        (int)response.StatusCode, apiUrl, error));
+```
 
-namespace ZugferdNavision
+---
+
+### 3.3 Handle `TaskCanceledException` (timeout) explicitly
+
+**File:** `src/ZugferdNavision.Converter/ZugferdConverter.cs` — wrap the `PostAsync` call
+
+`HttpClient` throws `TaskCanceledException` (wrapped by `GetAwaiter().GetResult()` as `AggregateException`) on timeout. NAV will show "Aggregated exception" which is uninformative. Catch and rethrow:
+
+```csharp
+try
 {
-    [ComVisible(true)]
-    [Guid("/* generate a new GUID */")]
-    public class ZugferdConverter
-    {
-        // Instance method — COM clients cannot call static methods
-        public ConversionResult ConvertToZugferd(
-            string apiUrl,
-            string pdfFilePath,
-            string xmlFilePath,
-            string profile = "BASIC")
-        {
-            if (!File.Exists(pdfFilePath))
-                throw new FileNotFoundException("PDF file not found", pdfFilePath);
-            if (!File.Exists(xmlFilePath))
-                throw new FileNotFoundException("XML file not found", xmlFilePath);
-
-            byte[] pdfBytes = File.ReadAllBytes(pdfFilePath);
-            byte[] xmlBytes = File.ReadAllBytes(xmlFilePath);
-
-            using (var client = new HttpClient { Timeout = TimeSpan.FromSeconds(60) })
-            using (var content = new MultipartFormDataContent())
-            {
-                content.Add(new ByteArrayContent(pdfBytes), "file",    Path.GetFileName(pdfFilePath));
-                content.Add(new ByteArrayContent(xmlBytes), "xmlFile", Path.GetFileName(xmlFilePath));
-                content.Add(new StringContent(profile),    "profile");
-
-                HttpResponseMessage response = client
-                    .PostAsync(apiUrl, content)
-                    .GetAwaiter().GetResult();
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    string error = response.Content
-                        .ReadAsStringAsync().GetAwaiter().GetResult();
-                    throw new Exception(
-                        $"API error {(int)response.StatusCode}: {error}");
-                }
-
-                byte[] resultPdf = response.Content
-                    .ReadAsByteArrayAsync().GetAwaiter().GetResult();
-
-                // Unique output path — avoids collision on concurrent calls
-                string outputPath = Path.Combine(
-                    Path.GetTempPath(),
-                    $"{Path.GetFileNameWithoutExtension(pdfFilePath)}_zugferd_{Guid.NewGuid():N}.pdf"
-                );
-                File.WriteAllBytes(outputPath, resultPdf);
-
-                return new ConversionResult
-                {
-                    OutputPath            = outputPath,
-                    XmlValidationErrors   = GetHeader(response, "X-XML-Validation-Errors"),
-                    PdfValidationErrors   = GetHeader(response, "X-PDF-Validation-Errors"),
-                    PdfA3ValidationErrors = GetHeader(response, "X-PDFA3-Validation-Errors")
-                };
-            }
-        }
-
-        private static string GetHeader(HttpResponseMessage response, string name)
-        {
-            IEnumerable<string> values;
-            return response.Headers.TryGetValues(name, out values)
-                ? string.Join("", values)
-                : null;
-        }
-    }
+    response = client.PostAsync(apiUrl, content).GetAwaiter().GetResult();
+}
+catch (AggregateException ae) when (ae.InnerException is TaskCanceledException)
+{
+    throw new TimeoutException(
+        string.Format("Request to {0} timed out after {1} seconds.",
+            apiUrl, TimeoutSeconds));
 }
 ```
 
-**Changes from the draft in requirements.md:**
-- `profile` promoted to a method parameter with default `"BASIC"`
-- Explicit `File.Exists` guards with clear `FileNotFoundException` messages
-- Instance method instead of `static` (required for COM)
-- `Guid.NewGuid()` in output path prevents overwrite on concurrent calls
-- `using System.Collections.Generic` added
+---
+
+## Phase 4 — Deployment Scripts (Medium Priority)
+
+### 4.1 Create PowerShell registration script
+
+**New file:** `scripts/Register-ZugferdNavision.ps1`
+
+Automates build + COM registration in one step for deployers. Should:
+- Accept `-DllPath` and `-Unregister` parameters
+- Auto-detect 32-bit vs. 64-bit `regasm.exe` based on `-Platform` parameter
+- Print success/failure clearly
+- Check for Administrator elevation before running
+
+```powershell
+param(
+    [string]$DllPath = ".\bin\Release\ZugferdNavision.Converter.dll",
+    [string]$Platform = "x86",   # or "x64"
+    [switch]$Unregister
+)
+# Elevation check, regasm path selection, registration/unregistration logic
+```
 
 ---
 
-## Phase 3 — Authentication Support
+### 4.2 Create CMD batch script as fallback
 
-**Goal**: Allow callers to pass an API key or Bearer token for protected endpoints.
+**New file:** `scripts\register.cmd`
 
-Add an optional `apiKey` parameter:
+For environments where PowerShell execution policy blocks `.ps1` files. Simpler than the PS script — just wraps the two `regasm` commands with an elevation check.
+
+---
+
+### 4.3 Document the output DLL name mismatch
+
+**File:** `navision/snippet.md` or inline in the registration script
+
+`AssemblyName` is currently `ZugferdNavision.Converter`, so the output file is `ZugferdNavision.Converter.dll` — not `ZugferdNavision.dll` as mentioned in the requirements draft. Either:
+
+- **Option A (preferred):** Rename `AssemblyName` to `ZugferdNavision` in the `.csproj` so the output matches the spec exactly.
+- **Option B:** Update all documentation to reference `ZugferdNavision.Converter.dll`.
+
+**Recommendation:** Apply Option A. Change `<AssemblyName>ZugferdNavision.Converter</AssemblyName>` → `<AssemblyName>ZugferdNavision</AssemblyName>` in the `.csproj`. This produces `ZugferdNavision.dll`, matching the requirements document and making `regasm` commands cleaner.
+
+---
+
+## Phase 5 — Test Coverage Expansion (Lower Priority)
+
+Current coverage: 9 tests across file-not-found, HTTP errors, success, concurrency, and bool properties. The following gaps remain:
+
+### 5.1 Test: null/empty `apiUrl` throws `ArgumentNullException`
 
 ```csharp
-public ConversionResult ConvertToZugferd(
-    string apiUrl,
-    string pdfFilePath,
-    string xmlFilePath,
-    string profile = "BASIC",
-    string apiKey  = null)
+[TestMethod]
+[ExpectedException(typeof(ArgumentNullException))]
+public void ConvertToZugferd_NullApiUrl_ThrowsArgumentNullException()
+{
+    var converter = new ZugferdConverter();
+    converter.ConvertToZugferd(null, _tempPdf, _tempXml);
+}
 ```
 
-Inside the method, before `PostAsync`:
+---
+
+### 5.2 Test: invalid `profile` value throws `ArgumentException`
 
 ```csharp
-if (!string.IsNullOrEmpty(apiKey))
-    client.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+[TestMethod]
+[ExpectedException(typeof(ArgumentException))]
+public void ConvertToZugferd_InvalidProfile_ThrowsArgumentException()
+{
+    var converter = new ZugferdConverter(new MockHttpHandler(HttpStatusCode.OK, new byte[0]));
+    converter.ConvertToZugferd("http://localhost/convert", _tempPdf, _tempXml, profile: "INVALID");
+}
 ```
 
-If Bearer tokens are needed instead, use:
+---
+
+### 5.3 Test: output file is placed in specified `outputDirectory`
 
 ```csharp
-client.DefaultRequestHeaders.Authorization =
-    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-```
+[TestMethod]
+public void ConvertToZugferd_CustomOutputDirectory_FileWrittenThere()
+{
+    string customDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+    // Directory should be auto-created (Phase 2.3)
+    byte[] fakePdf = Encoding.UTF8.GetBytes("%PDF-1.4 fake");
+    var handler = new MockHttpHandler(HttpStatusCode.OK, fakePdf, "application/pdf");
+    var converter = new ZugferdConverter(handler);
 
-> Confirm the API's authentication scheme before choosing between these two.
+    ConversionResult result = converter.ConvertToZugferd(
+        "http://localhost/convert", _tempPdf, _tempXml, outputDirectory: customDir);
+
+    Assert.IsTrue(result.OutputPath.StartsWith(customDir));
+    Assert.IsTrue(File.Exists(result.OutputPath));
+
+    Directory.Delete(customDir, recursive: true);
+}
+```
 
 ---
 
-## Phase 4 — Testing
+### 5.4 Test: `X-Api-Key` header is sent when `apiKey` is provided
 
-**Goal**: Verify all behaviour without a live Navision instance or production API.
+Requires a `MockHttpHandler` variant that captures the request. Add an `InspectableHttpHandler` to the test file:
 
-### Test cases to implement in `ZugferdConverterTests.cs`
+```csharp
+internal class InspectableHttpHandler : HttpMessageHandler
+{
+    public HttpRequestMessage LastRequest { get; private set; }
+    // ... returns 200 OK with empty PDF body
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request, CancellationToken ct)
+    {
+        LastRequest = request;
+        // return OK response
+    }
+}
 
-| # | Scenario | Method | How to test |
-|---|----------|--------|-------------|
-| 1 | PDF file not found | `ConvertToZugferd` | Pass a non-existent path, assert `FileNotFoundException` |
-| 2 | XML file not found | `ConvertToZugferd` | Pass a non-existent XML path, assert `FileNotFoundException` |
-| 3 | API returns 400 | `ConvertToZugferd` | Mock `HttpClient`, return 400, assert `Exception` with status code |
-| 4 | API returns 429 | `ConvertToZugferd` | Mock `HttpClient`, return 429, assert `Exception` |
-| 5 | API returns 500 | `ConvertToZugferd` | Mock `HttpClient`, return 500, assert `Exception` |
-| 6 | Successful conversion, no validation errors | `ConvertToZugferd` | Mock 200 with PDF body, assert `OutputPath` exists, all error fields null |
-| 7 | Successful conversion, all three validation headers present | `ConvertToZugferd` | Mock 200 with headers set, assert all three error fields non-null |
-| 8 | Concurrent calls for same input file | `ConvertToZugferd` | Call twice in parallel, assert output paths are different |
-| 9 | `HasXmlErrors` / `HasPdfErrors` / `HasPdfA3Errors` flags | `ConversionResult` | Unit test the bool properties directly |
-
-**Mocking `HttpClient`**: Use `HttpMessageHandler` subclass or install `RichardSzalay.MockHttp` NuGet package.
-
-### Integration smoke test (manual)
-
-1. Point `apiUrl` at the real conversion service.
-2. Supply a real invoice PDF and a valid ZUGFeRD XML file.
-3. Assert `OutputPath` file exists, is non-empty, and opens as a valid PDF.
-4. Optionally run a PDF/A-3 validator against the output.
+[TestMethod]
+public void ConvertToZugferd_WithApiKey_SendsApiKeyHeader()
+{
+    var handler = new InspectableHttpHandler();
+    var converter = new ZugferdConverter(handler);
+    converter.ConvertToZugferd("http://localhost/convert", _tempPdf, _tempXml, apiKey: "my-secret");
+    Assert.IsTrue(handler.LastRequest.Headers.Contains("X-Api-Key"));
+    Assert.AreEqual("my-secret", handler.LastRequest.Headers.GetValues("X-Api-Key").First());
+}
+```
 
 ---
 
-## Phase 5 — Build & COM Registration
+### 5.5 Test: `TimeoutSeconds` property affects behavior
 
-**Goal**: Produce a deployable DLL and register it on the Navision server.
+**File:** `tests/ZugferdNavision.Tests/ZugferdConverterTests.cs`
 
-### Build steps
+Verifies the new `TimeoutSeconds` property (Phase 3.1) is respected at construction time:
 
-1. Build in **Release | x86** configuration.
-2. Verify output: `bin\x86\Release\ZugferdNavision.Converter.dll`
-3. Sign the assembly with a strong name key (`sn -k ZugferdNavision.snk`) if the Navision server requires signed COM components.
-
-### Deployment checklist
-
+```csharp
+[TestMethod]
+public void ZugferdConverter_DefaultTimeoutSeconds_Is60()
+{
+    var converter = new ZugferdConverter();
+    Assert.AreEqual(60, converter.TimeoutSeconds);
+}
 ```
-[ ] Copy ZugferdNavision.Converter.dll to the server (e.g. C:\NavAddins\)
-[ ] Copy System.Net.Http.dll to the same folder if not present in the GAC
-[ ] Open an elevated command prompt on the server
-[ ] Run: C:\Windows\Microsoft.NET\Framework\v4.0.30319\RegAsm.exe
-         /codebase C:\NavAddins\ZugferdNavision.Converter.dll
-[ ] Verify: RegAsm reports "Types registered successfully"
-[ ] Confirm GUID appears in HKEY_CLASSES_ROOT\CLSID in the registry
-```
-
-> Use the 32-bit `Framework\v4.0.30319` path (not `Framework64`) to match Navision's process.
 
 ---
 
-## Phase 6 — Navision C/AL Integration
+## Phase 6 — Documentation Updates (Lower Priority)
 
-**Goal**: Provide a ready-to-paste C/AL code block.
+### 6.1 Update `navision/snippet.md`
 
-### Variables
+- Add `TimeoutSeconds` usage example (from Phase 3.1)
+- Add TryFunction wrapper with proper error message extraction
+- Clarify the correct DLL filename after Phase 4.3 rename
 
-| Name | Type | SubType |
-|------|------|---------|
-| `Converter` | Automation | `'ZugferdNavision'.ZugferdConverter` |
-| `Result` | Automation | `'ZugferdNavision'.ConversionResult` |
-| `PdfPath` | Text | |
-| `XmlPath` | Text | |
-| `ApiUrl` | Text | |
+### 6.2 Add a `DEPLOYMENT.md` in the project root
 
-### C/AL code
-
-```pascal
-ApiUrl  := 'https://your-api-host/convert';
-PdfPath := 'C:\Temp\invoice.pdf';
-XmlPath := 'C:\Temp\invoice.xml';
-
-CREATE(Converter);
-Result := Converter.ConvertToZugferd(ApiUrl, PdfPath, XmlPath, 'BASIC', '');
-
-IF Result.HasXmlErrors THEN
-  MESSAGE('XML validation warnings: %1', Result.XmlValidationErrors);
-
-IF Result.HasPdfErrors THEN
-  MESSAGE('PDF validation warnings: %1', Result.PdfValidationErrors);
-
-IF Result.HasPdfA3Errors THEN
-  MESSAGE('PDF/A-3 validation warnings: %1', Result.PdfA3ValidationErrors);
-
-// Result.OutputPath now holds the ZUGFeRD PDF — attach or send as needed
-MESSAGE('ZUGFeRD PDF saved to: %1', Result.OutputPath);
-
-CLEAR(Converter);
-
-// Clean up temp files
-ERASE(PdfPath);
-ERASE(XmlPath);
-```
-
-> Wrap the entire block in error handling (`IF NOT TRY ... THEN ERROR(GETLASTERRORTEXT)`) so API failures surface a readable message in Navision.
+Brief guide covering:
+1. Build command (`msbuild` or `dotnet build`)
+2. Registration command (`regasm /codebase /tlb`)
+3. How to verify registration (`reg query HKCR\ZugferdNavision.ZugferdConverter`)
+4. How to unregister (`regasm /unregister`)
+5. Bitness requirements and common errors
 
 ---
 
-## Delivery Checklist
+## Summary Table
 
-```
-[ ] Phase 1: Solution and projects created, platform target x86, AssemblyInfo configured
-[ ] Phase 2: ConversionResult.cs and ZugferdConverter.cs implemented and compile clean
-[ ] Phase 3: apiKey parameter added and documented
-[ ] Phase 4: All 9 unit tests passing; manual smoke test against real API completed
-[ ] Phase 5: DLL built in Release|x86, deployed and registered on Navision server
-[ ] Phase 6: C/AL code tested end-to-end against a real invoice in Navision
-```
+| # | Item | Priority | File(s) | Effort |
+|---|------|----------|---------|--------|
+| 1.1 | Add `[ProgId]` to `ZugferdConverter` | **Critical** | `ZugferdConverter.cs` | 1 line |
+| 1.2 | Add `[ClassInterface(AutoDual)]` to `ZugferdConverter` | **Critical** | `ZugferdConverter.cs` | 1 line |
+| 1.3 | Add `[ClassInterface(AutoDual)]` to `ConversionResult` | **Critical** | `ConversionResult.cs` | 1 line |
+| 1.4 | Upgrade `TargetFramework` to `net472` | **Critical** | both `.csproj` files | 1 line each |
+| 1.5 | Add `RegisterForComInterop` | High | `ZugferdNavision.Converter.csproj` | 1 line |
+| 2.1 | Validate `apiUrl` | Medium | `ZugferdConverter.cs` | 3 lines |
+| 2.2 | Validate `profile` whitelist | Medium | `ZugferdConverter.cs` | 8 lines |
+| 2.3 | Auto-create output directory | Medium | `ZugferdConverter.cs` | 2 lines |
+| 3.1 | Configurable `TimeoutSeconds` property | Medium | `ZugferdConverter.cs` | 3 lines |
+| 3.2 | Improve HTTP error message | Medium | `ZugferdConverter.cs` | 2 lines |
+| 3.3 | Handle timeout `AggregateException` | Medium | `ZugferdConverter.cs` | 6 lines |
+| 4.1 | PowerShell registration script | Medium | `scripts/Register-ZugferdNavision.ps1` | new file |
+| 4.2 | CMD batch script | Low | `scripts/register.cmd` | new file |
+| 4.3 | Rename `AssemblyName` to `ZugferdNavision` | Medium | `.csproj` | 1 line |
+| 5.1 | Test: null apiUrl | Low | `ZugferdConverterTests.cs` | 8 lines |
+| 5.2 | Test: invalid profile | Low | `ZugferdConverterTests.cs` | 8 lines |
+| 5.3 | Test: custom outputDirectory | Low | `ZugferdConverterTests.cs` | 15 lines |
+| 5.4 | Test: apiKey header sent | Low | `ZugferdConverterTests.cs` | 15 lines + helper |
+| 5.5 | Test: default TimeoutSeconds | Low | `ZugferdConverterTests.cs` | 6 lines |
+| 6.1 | Update `navision/snippet.md` | Low | `navision/snippet.md` | prose |
+| 6.2 | Add `DEPLOYMENT.md` | Low | `DEPLOYMENT.md` | new file |
+
+**Start with Phase 1** — items 1.1–1.3 are the only changes required for the DLL to appear and function correctly in NAV 2017. All other phases improve robustness, maintainability, and developer experience.

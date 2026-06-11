@@ -65,7 +65,7 @@ namespace ZugferdNavision.Tests
         [TestMethod]
         public void ConvertToZugferd_Api429_ThrowsException()
         {
-            var handler = new MockHttpHandler(HttpStatusCode.TooManyRequests, "rate limit");
+            var handler = new MockHttpHandler((HttpStatusCode)429, "rate limit");
             var converter = new ZugferdConverter(handler);
             var ex = Assert.ThrowsException<Exception>(
                 () => converter.ConvertToZugferd("http://localhost/convert", _tempPdf, _tempXml));
@@ -161,6 +161,71 @@ namespace ZugferdNavision.Tests
             if (File.Exists(path2)) File.Delete(path2);
         }
 
+        // --- 5.1 null apiUrl throws ArgumentNullException ---
+        [TestMethod]
+        [ExpectedException(typeof(ArgumentNullException))]
+        public void ConvertToZugferd_NullApiUrl_ThrowsArgumentNullException()
+        {
+            var converter = new ZugferdConverter();
+            converter.ConvertToZugferd(null, _tempPdf, _tempXml);
+        }
+
+        // --- 5.2 invalid profile throws ArgumentException ---
+        [TestMethod]
+        [ExpectedException(typeof(ArgumentException))]
+        public void ConvertToZugferd_InvalidProfile_ThrowsArgumentException()
+        {
+            byte[] fakePdf = Encoding.UTF8.GetBytes("%PDF-1.4 fake");
+            var handler = new MockHttpHandler(HttpStatusCode.OK, fakePdf, "application/pdf");
+            var converter = new ZugferdConverter(handler);
+            converter.ConvertToZugferd("http://localhost/convert", _tempPdf, _tempXml, profile: "INVALID");
+        }
+
+        // --- 5.3 custom outputDirectory (auto-created) ---
+        [TestMethod]
+        public void ConvertToZugferd_CustomOutputDirectory_FileWrittenThere()
+        {
+            string customDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            byte[] fakePdf = Encoding.UTF8.GetBytes("%PDF-1.4 fake");
+            var handler = new MockHttpHandler(HttpStatusCode.OK, fakePdf, "application/pdf");
+            var converter = new ZugferdConverter(handler);
+
+            ConversionResult result = converter.ConvertToZugferd(
+                "http://localhost/convert", _tempPdf, _tempXml, outputDirectory: customDir);
+
+            Assert.IsTrue(result.OutputPath.StartsWith(customDir),
+                "OutputPath should be inside the custom directory");
+            Assert.IsTrue(File.Exists(result.OutputPath), "Output file should exist on disk");
+
+            Directory.Delete(customDir, true);
+        }
+
+        // --- 5.4 X-Api-Key header is sent when apiKey is provided ---
+        [TestMethod]
+        public void ConvertToZugferd_WithApiKey_SendsApiKeyHeader()
+        {
+            byte[] fakePdf = Encoding.UTF8.GetBytes("%PDF-1.4 fake");
+            var handler = new InspectableHttpHandler(HttpStatusCode.OK, fakePdf, "application/pdf");
+            var converter = new ZugferdConverter(handler);
+
+            converter.ConvertToZugferd("http://localhost/convert", _tempPdf, _tempXml, apiKey: "my-secret");
+
+            Assert.IsNotNull(handler.LastRequest, "Handler should have received a request");
+            Assert.IsTrue(handler.LastRequest.Headers.Contains("X-Api-Key"),
+                "Request should contain X-Api-Key header");
+            var values = new System.Collections.Generic.List<string>(
+                handler.LastRequest.Headers.GetValues("X-Api-Key"));
+            Assert.AreEqual("my-secret", values[0]);
+        }
+
+        // --- 5.5 default TimeoutSeconds is 60 ---
+        [TestMethod]
+        public void ZugferdConverter_DefaultTimeoutSeconds_Is60()
+        {
+            var converter = new ZugferdConverter();
+            Assert.AreEqual(60, converter.TimeoutSeconds);
+        }
+
         // --- 4.9 ConversionResult bool properties ---
         [TestMethod]
         public void ConversionResult_BoolProperties_ReflectStringValues()
@@ -230,6 +295,36 @@ namespace ZugferdNavision.Tests
                 foreach (var (name, value) in _extraHeaders)
                     response.Headers.TryAddWithoutValidation(name, value);
 
+            return Task.FromResult(response);
+        }
+    }
+
+    internal class InspectableHttpHandler : HttpMessageHandler
+    {
+        public HttpRequestMessage LastRequest { get; private set; }
+
+        private readonly HttpStatusCode _statusCode;
+        private readonly byte[] _body;
+        private readonly string _contentType;
+
+        public InspectableHttpHandler(HttpStatusCode statusCode, byte[] body, string contentType)
+        {
+            _statusCode  = statusCode;
+            _body        = body ?? Array.Empty<byte>();
+            _contentType = contentType;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            var response = new HttpResponseMessage(_statusCode)
+            {
+                Content = new ByteArrayContent(_body)
+            };
+            response.Content.Headers.ContentType =
+                new System.Net.Http.Headers.MediaTypeHeaderValue(_contentType);
             return Task.FromResult(response);
         }
     }

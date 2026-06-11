@@ -369,7 +369,7 @@
     "version": "1.0.0",
     "restore": {
       "projectUniqueName": "C:\\repository\\sa-navision-zugferd-dll\\src\\ZugferdNavision.Converter\\ZugferdNavision.Converter.csproj",
-      "projectName": "ZugferdNavision.Converter",
+      "projectName": "ZugferdNavision",
       "projectPath": "C:\\repository\\sa-navision-zugferd-dll\\src\\ZugferdNavision.Converter\\ZugferdNavision.Converter.csproj",
       "packagesPath": "C:\\Users\\vcape\\.nuget\\packages\\",
       "outputPath": "C:\\repository\\sa-navision-zugferd-dll\\src\\ZugferdNavision.Converter\\obj\\",

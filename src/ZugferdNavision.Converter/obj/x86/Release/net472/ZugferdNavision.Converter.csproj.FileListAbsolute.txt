@@ -1,0 +1,8 @@
+C:\repository\sa-navision-zugferd-dll\src\ZugferdNavision.Converter\bin\x86\Release\net472\ZugferdNavision.dll
+C:\repository\sa-navision-zugferd-dll\src\ZugferdNavision.Converter\bin\x86\Release\net472\ZugferdNavision.pdb
+C:\repository\sa-navision-zugferd-dll\src\ZugferdNavision.Converter\obj\x86\Release\net472\ZugferdNavision.Converter.csproj.AssemblyReference.cache
+C:\repository\sa-navision-zugferd-dll\src\ZugferdNavision.Converter\obj\x86\Release\net472\ZugferdNavision.Converter.GeneratedMSBuildEditorConfig.editorconfig
+C:\repository\sa-navision-zugferd-dll\src\ZugferdNavision.Converter\obj\x86\Release\net472\ZugferdNavision.Converter.csproj.CoreCompileInputs.cache
+C:\repository\sa-navision-zugferd-dll\src\ZugferdNavision.Converter\obj\x86\Release\net472\ZugferdNavision.Converter.sourcelink.json
+C:\repository\sa-navision-zugferd-dll\src\ZugferdNavision.Converter\obj\x86\Release\net472\ZugferdNavision.dll
+C:\repository\sa-navision-zugferd-dll\src\ZugferdNavision.Converter\obj\x86\Release\net472\ZugferdNavision.pdb

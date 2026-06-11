@@ -1,0 +1,63 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\repository\\sa-navision-zugferd-dll\\src\\ZugferdNavision.Converter\\ZugferdNavision.Converter.csproj": {}
+  },
+  "projects": {
+    "C:\\repository\\sa-navision-zugferd-dll\\src\\ZugferdNavision.Converter\\ZugferdNavision.Converter.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\repository\\sa-navision-zugferd-dll\\src\\ZugferdNavision.Converter\\ZugferdNavision.Converter.csproj",
+        "projectName": "ZugferdNavision",
+        "projectPath": "C:\\repository\\sa-navision-zugferd-dll\\src\\ZugferdNavision.Converter\\ZugferdNavision.Converter.csproj",
+        "packagesPath": "C:\\Users\\vcape\\.nuget\\packages\\",
+        "outputPath": "C:\\repository\\sa-navision-zugferd-dll\\src\\ZugferdNavision.Converter\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\vcape\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net46"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net46": {
+            "framework": "net46",
+            "targetAlias": "net46",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.300"
+      },
+      "frameworks": {
+        "net46": {
+          "framework": "net46",
+          "targetAlias": "net46",
+          "dependencies": {
+            "Microsoft.NETFramework.ReferenceAssemblies": {
+              "suppressParent": "All",
+              "target": "Package",
+              "version": "[1.0.3, )",
+              "autoReferenced": true
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.301\\RuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

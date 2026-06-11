@@ -4,6 +4,7 @@ namespace ZugferdNavision
 {
     [ComVisible(true)]
     [Guid("5D6258F6-7C4B-4F62-9D7A-4143C1D5211A")]
+    [ClassInterface(ClassInterfaceType.AutoDual)]
     public class ConversionResult
     {
         public string OutputPath { get; set; }

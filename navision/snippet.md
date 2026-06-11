@@ -5,8 +5,11 @@
 The DLL must be registered on the Navision server before these variables work:
 
 ```
-C:\Windows\Microsoft.NET\Framework\v4.0.30319\RegAsm.exe /codebase C:\NavAddins\ZugferdNavision.Converter.dll
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\RegAsm.exe /codebase /tlb C:\NavAddins\ZugferdNavision.dll
 ```
+
+> The output file is `ZugferdNavision.dll` (not `ZugferdNavision.Converter.dll`).
+> Use the PowerShell helper for a one-step build + register: `scripts\Register-ZugferdNavision.ps1`
 
 ---
 
@@ -129,10 +132,26 @@ The DLL adds it as an `X-Api-Key` request header automatically.
 ## Choosing a ZUGFeRD profile
 
 The fourth argument selects the conformance level.
-Valid values are `'BASIC'`, `'COMFORT'`, and `'EXTENDED'`:
+Valid values are `'MINIMUM'`, `'BASIC WL'`, `'BASIC'`, `'EN16931'`, `'EXTENDED'`, and `'XRECHNUNG'`:
 
 ```pascal
 Result := Converter.ConvertToZugferd(ApiUrl, PdfPath, XmlPath, 'EXTENDED', '');
+```
+
+An empty string or omitted value defaults to `'BASIC'`. Any other value raises a COM exception
+with a message listing the valid profiles.
+
+---
+
+## Adjusting the HTTP timeout
+
+For large PDF files the default 60-second timeout may be too short.
+Set `TimeoutSeconds` before calling `ConvertToZugferd`:
+
+```pascal
+CREATE(Converter);
+Converter.TimeoutSeconds := 120;   // 2-minute timeout
+Result := Converter.ConvertToZugferd(ApiUrl, PdfPath, XmlPath, 'BASIC', '', TempFolder);
 ```
 
 ---

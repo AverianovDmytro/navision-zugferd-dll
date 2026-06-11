@@ -3,10 +3,11 @@
   <PropertyGroup>
     <TargetFramework>net46</TargetFramework>
     <OutputType>Library</OutputType>
-    <AssemblyName>ZugferdNavision.Converter</AssemblyName>
+    <AssemblyName>ZugferdNavision</AssemblyName>
     <RootNamespace>ZugferdNavision</RootNamespace>
     <PlatformTarget>x86</PlatformTarget>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <RegisterForComInterop Condition="'$(MSBuildRuntimeType)' != 'Core'">true</RegisterForComInterop>
     <Nullable>disable</Nullable>
     <LangVersion>7.3</LangVersion>
   </PropertyGroup>

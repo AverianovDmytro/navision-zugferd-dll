@@ -1,0 +1,6 @@
+.vs/*
+
+*.cache
+tests/*
+src/ZugferdNavision.Converter/obj/x86/Debug/*
+
