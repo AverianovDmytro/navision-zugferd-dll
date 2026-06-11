@@ -46,7 +46,7 @@
   - [x] 2.2.14 Read `X-PDF-Validation-Errors` header into `ConversionResult`
   - [x] 2.2.15 Read `X-PDFA3-Validation-Errors` header into `ConversionResult`
   - [x] 2.2.16 Add `using System.Collections.Generic` (required for `IEnumerable<string>`)
-- [ ] 2.3 Verify the project compiles clean in Release|x86 with no warnings
+- [x] 2.3 Verify the project compiles clean in Release|x86 with no warnings
       *(requires .NET SDK or Visual Studio — run `dotnet build` or build in VS)*
 
 ---
@@ -56,7 +56,7 @@
 - [x] 3.1 Add optional `apiKey` parameter to `ConvertToZugferd` (default `null`)
 - [x] 3.2 When `apiKey` is non-empty, add it to the request as `X-Api-Key` header
 - [ ] 3.3 Confirm with API owner whether Bearer token or `X-Api-Key` header is required and adjust accordingly
-- [ ] 3.4 Verify the project still compiles clean after the parameter addition
+- [x] 3.4 Verify the project still compiles clean after the parameter addition
       *(requires .NET SDK or Visual Studio)*
 
 ---
@@ -73,7 +73,7 @@
 - [x] 4.8 Write unit test: two concurrent calls for the same input → output paths are different
 - [x] 4.9 Write unit tests for `ConversionResult` bool properties (`HasXmlErrors`, `HasPdfErrors`, `HasPdfA3Errors`)
 - [x] 4.10 Set up `HttpClient` mocking (`MockHttpHandler` — custom `HttpMessageHandler` subclass, no NuGet needed)
-- [ ] 4.11 Run all unit tests — confirm all pass
+- [x] 4.11 Run all unit tests — confirm all pass
       *(requires .NET SDK — run `dotnet test` or use VS Test Explorer)*
 - [ ] 4.12 Run manual integration smoke test against real API:
   - [ ] 4.12.1 Supply a real invoice PDF and valid ZUGFeRD XML
@@ -85,8 +85,8 @@
 
 ## Phase 5 — Build & COM Registration
 
-- [ ] 5.1 Build the solution in **Release | x86** configuration
-- [ ] 5.2 Confirm output at `bin\x86\Release\ZugferdNavision.Converter.dll`
+- [x] 5.1 Build the solution in **Release | x86** configuration
+- [x] 5.2 Confirm output at `bin\x86\Release\ZugferdNavision.Converter.dll`
 - [ ] 5.3 Generate a strong name key (`sn -k ZugferdNavision.snk`) and sign the assembly if required
 - [ ] 5.4 Copy `ZugferdNavision.Converter.dll` to the Navision server (e.g. `C:\NavAddins\`)
 - [ ] 5.5 Copy `System.Net.Http.dll` to the same folder if not present in the server's GAC

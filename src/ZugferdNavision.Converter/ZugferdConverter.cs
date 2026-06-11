@@ -25,8 +25,9 @@ namespace ZugferdNavision
             string apiUrl,
             string pdfFilePath,
             string xmlFilePath,
-            string profile = "BASIC",
-            string apiKey  = null)
+            string profile         = "BASIC",
+            string apiKey          = null,
+            string outputDirectory = null)
         {
             if (!File.Exists(pdfFilePath))
                 throw new FileNotFoundException("PDF file not found", pdfFilePath);
@@ -58,8 +59,12 @@ namespace ZugferdNavision
                 byte[] resultPdf = response.Content
                     .ReadAsByteArrayAsync().GetAwaiter().GetResult();
 
+                string outDir = !string.IsNullOrEmpty(outputDirectory)
+                    ? outputDirectory
+                    : Path.GetTempPath();
+
                 string outputPath = Path.Combine(
-                    Path.GetTempPath(),
+                    outDir,
                     $"{Path.GetFileNameWithoutExtension(pdfFilePath)}_zugferd_{Guid.NewGuid():N}.pdf"
                 );
                 File.WriteAllBytes(outputPath, resultPdf);
