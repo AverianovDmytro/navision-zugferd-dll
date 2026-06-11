@@ -1,0 +1,46 @@
+post:
+  summary: Convert PDF to PDF/A-3
+  operationId: convertPdf
+  tags:
+    - Conversion
+  requestBody:
+    required: true
+    content:
+      multipart/form-data:
+        schema:
+          type: object
+          properties:
+            file:
+              type: string
+              format: binary
+              description: The PDF file to convert
+            xmlFile:
+              type: string
+              format: binary
+              description: Optional ZUGFeRD XML file to embed
+            profile:
+              type: string
+              description: ZUGFeRD conformance level (e.g., BASIC, COMFORT, EXTENDED)
+              default: BASIC
+  responses:
+    '200':
+      description: Successfully converted PDF
+      content:
+        application/pdf:
+          schema:
+            type: string
+            format: binary
+    '400':
+      description: Invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas/ErrorResponse.yaml'
+    '429':
+      description: Too many requests
+    '500':
+      description: Server error
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas/ErrorResponse.yaml'
