@@ -1,0 +1,27 @@
+Das häufigste Problem: NAV 2017 liest die Automation-Typen aus der Type Library (.tlb) — nicht direkt aus der Registry. Ohne /tlb sieht NAV die Komponente nicht.
+
+Lösung — mit /tlb erneut registrieren
+
+Als Administrator:
+
+C:\Windows\Microsoft.NET\Framework64\v4.0.30319\regasm.exe /codebase /tlb "C:\Program Files\Microsoft Dynamics NAV\100\Service\Add-Ins\ZugferdNavision.dll"
+
+Das erzeugt eine ZugferdNavision.tlb und registriert sie.
+
+---
+Danach prüfen ob es in der Registry steht
+
+reg query "HKEY_CLASSES_ROOT\ZugferdNavision.Converter"
+
+Erwartete Ausgabe:
+HKEY_CLASSES_ROOT\ZugferdNavision.Converter
+    (Standard)    REG_SZ    ZugferdNavision.Converter
+
+---
+Falls immer noch nicht sichtbar in NAV
+
+1. NAV Development Environment neu starten nach der Registrierung
+2. Beim Anlegen der Variable: Subtype-Feld öffnen → ... Button → dort nach ZugferdNavision suchen
+3. Sicherstellen dass der Benutzer, der NAV gestartet hat, Lesezugriff auf HKEY_CLASSES_ROOT hat
+
+Was zeigt der reg query Befehl?
